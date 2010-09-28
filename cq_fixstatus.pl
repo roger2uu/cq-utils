@@ -54,9 +54,10 @@ use Socket;                                     # socket io
 my @cqids =();
 my @fixids =();
 my %hash_defect_fix = ();
+my %hash_defect_priority = ();
 my @in = ();
-my %saw1 = ();	# repeat_count for Defect
-my %saw2 = ();	# repeat_count for Fix
+my %defect_repeat_count = ();	# repeat_count for Defect
+my %fix_repeat_count = ();	# repeat_count for Fix
 
 # find all CQIDs
 foreach $file ( @ARGV )				# foreach file in cmd list
@@ -79,19 +80,19 @@ foreach $file ( @ARGV )				# foreach file in cmd list
 # Check all Defects
 # count each CQID, could be fix, could be defect
 
-foreach $cqid ( @in ) { $saw1{$cqid} += 1; }
-@cqids = sort keys %saw1;
+foreach $cqid ( @in ) { $defect_repeat_count{$cqid} += 1; }
+@cqids = sort keys %defect_repeat_count;
 
 foreach $defectid ( @cqids )
 {
     chomp($defectid);
-    my $xmlstr = "<ClearQuest> <defect id=\"$defectid\"> <Fix/> <State/> </defect> </ClearQuest>";
+    my $xmlstr = "<ClearQuest> <defect id=\"$defectid\"> <Fix/> <Priority/> <State/> </defect> </ClearQuest>";
     $exitval = &cqclient ($xmlstr);
     if ( $exitval )
     { 
 	# This is not a valid Defect. Maybe it is a Fix CQ record.
 	push (@fixids, $defectid);
-	$saw2{$defectid} += ($saw1{$defectid}-1); # for multiple Fixes from ARGV
+	$fix_repeat_count{$defectid} += ($defect_repeat_count{$defectid}-1); # for multiple Fixes from ARGV
 	next;
     }
 
@@ -100,19 +101,24 @@ foreach $defectid ( @cqids )
     $temp = 1;
     foreach $fixid ( split /[ \n]+/, $1 ) {
 	push (@fixids, $fixid);	
-	$temp = ($saw1{$defectid}-1);
-	$saw2{$fixid} += $temp; 	# for multiple Defects from ARGV
+	$temp = ($defect_repeat_count{$defectid}-1);
+	$fix_repeat_count{$fixid} += $temp; 	# for multiple Defects from ARGV
 	$temp = 0;
     }
 
     $cqtxt =~ m/<State>(.*)<\/State>/is;
-    ($temp) && ( $hash_defect_fix{$defectid}{"na"} = "defect $1, na" );
+    my $defect_state = $1;
+
+    $cqtxt =~ m/<Priority>([0-9]).*<\/Priority>/is;
+    $hash_defect_priority{$defectid} = "P$1";
+
+    ($temp) && ( $hash_defect_fix{$defectid}{"na"} = "defect $defect_state, na" );
 
 }
 
 # Update Fix's information
-foreach $fixid ( @fixids ) { $saw2{$fixid} += 1; }
-@fixids = sort keys %saw2;
+foreach $fixid ( @fixids ) { $fix_repeat_count{$fixid} += 1; }
+@fixids = sort keys %fix_repeat_count;
 
 foreach $fixid ( @fixids ) 
 {
@@ -135,21 +141,37 @@ foreach $fixid ( @fixids )
     my $defectid = $1;
 
     $hash_defect_fix{$defectid}{$fixid} = "fix $state, $release";
+
+    if (!defined ( $hash_defect_priority{$defectid} ))
+    {
+	$xmlstr = "<ClearQuest> <defect id=\"$defectid\"> <Fix/> <Priority/> <State/> </defect> </ClearQuest>";
+    	$exitval = &cqclient ($xmlstr);
+    	( $exitval ) && print STDERR "'$defectid': error to retrieve info.\n";
+
+	$cqtxt = join( '', @cmdout ); 
+    	$cqtxt =~ m/<Priority>([0-9]).*<\/Priority>/is;
+    	$hash_defect_priority{$defectid} = "P$1";
+    }
 }
 
 
 # Reporting
-$saw2{"na"} = 0;
+$fix_repeat_count{"na"} = 0;
 $temp = 1;
 foreach $defectid ( keys %hash_defect_fix ) 
 {
-    ($temp) && (print "defectid, fixid, state, target_release, repeat_count\n")&&($temp=0);
+    ($temp) && (print "priority, defectid, fixid, state, target_release, repeat_count\n")&&($temp=0);
     $deref = $hash_defect_fix{$defectid};
     foreach $fixid ( keys %$deref ) {
-	$count = $saw2{$fixid};
-	if ( $saw2{$fixid} < $saw1{$defectid} ) 
-	{ ( $count = $saw1{$defectid} ); }
-	print "$defectid, $fixid, $hash_defect_fix{$defectid}{$fixid}, $count\n";
+	$count = $fix_repeat_count{$fixid};
+
+	if (defined ($defect_repeat_count{$defectid})) 
+	{
+		if ($fix_repeat_count{$fixid} < $defect_repeat_count{$defectid}) 
+		{ $count = $defect_repeat_count{$defectid}; }
+	}
+
+	print "$hash_defect_priority{$defectid}, $defectid, $fixid, $hash_defect_fix{$defectid}{$fixid}, $count\n";
     }
 }
 
