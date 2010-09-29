@@ -86,7 +86,7 @@ foreach $cqid ( @in ) { $defect_repeat_count{$cqid} += 1; }
 foreach $defectid ( @cqids )
 {
     chomp($defectid);
-    my $xmlstr = "<ClearQuest> <defect id=\"$defectid\"> <Fix/> <Priority/> <State/> </defect> </ClearQuest>";
+    my $xmlstr = "<ClearQuest> <defect id=\"$defectid\"> <Fix/> <Priority/> <State/> <Summary/> </defect> </ClearQuest>";
     $exitval = &cqclient ($xmlstr);
     if ( $exitval )
     { 
@@ -112,7 +112,15 @@ foreach $defectid ( @cqids )
     $cqtxt =~ m/<Priority>([0-9]).*<\/Priority>/is;
     $hash_defect_priority{$defectid} = "P$1";
 
-    ($temp) && ( $hash_defect_fix{$defectid}{"na"} = "defect $defect_state, na" );
+    # No Fix for this defect.
+    if ($temp) 
+    {
+	$cqtxt =~ m/<Summary>(.*)<\/Summary>/is;
+    	my $defect_summary = $1;
+	$hash_defect_fix{$defectid}{"na"} = "defect $defect_state, na, $defect_summary";
+    }
+
+
 
 }
 
@@ -122,7 +130,7 @@ foreach $fixid ( @fixids ) { $fix_repeat_count{$fixid} += 1; }
 
 foreach $fixid ( @fixids ) 
 {
-    my $xmlstr = "<ClearQuest> <fix id=\"$fixid\"> <State/> <Defect/> <Release/> </fix> </ClearQuest>";
+    my $xmlstr = "<ClearQuest> <fix id=\"$fixid\"> <State/> <Defect/> <Release/> <Summary/> </fix> </ClearQuest>";
     $exitval = &cqclient ($xmlstr);
     if (  $exitval )
     { 
@@ -140,11 +148,14 @@ foreach $fixid ( @fixids )
     $cqtxt =~ m/<Defect>(.*)<\/Defect>/is;
     my $defectid = $1;
 
-    $hash_defect_fix{$defectid}{$fixid} = "fix $state, $release";
+    $cqtxt =~ m/<Summary>(.*)<\/Summary>/is;
+    my $fix_summary = $1;
+
+    $hash_defect_fix{$defectid}{$fixid} = "fix $state, $release, $fix_summary";
 
     if (!defined ( $hash_defect_priority{$defectid} ))
     {
-	$xmlstr = "<ClearQuest> <defect id=\"$defectid\"> <Fix/> <Priority/> <State/> </defect> </ClearQuest>";
+	$xmlstr = "<ClearQuest> <defect id=\"$defectid\"> <Priority/> </defect> </ClearQuest>";
     	$exitval = &cqclient ($xmlstr);
     	( $exitval ) && print STDERR "'$defectid': error to retrieve info.\n";
 
@@ -160,7 +171,7 @@ $fix_repeat_count{"na"} = 0;
 $temp = 1;
 foreach $defectid ( keys %hash_defect_fix ) 
 {
-    ($temp) && (print "priority, defectid, fixid, state, target_release, repeat_count\n")&&($temp=0);
+    ($temp) && (print "priority, defectid, fixid, count, state, target_release, summary\n")&&($temp=0);
     $deref = $hash_defect_fix{$defectid};
     foreach $fixid ( keys %$deref ) {
 	$count = $fix_repeat_count{$fixid};
@@ -171,7 +182,7 @@ foreach $defectid ( keys %hash_defect_fix )
 		{ $count = $defect_repeat_count{$defectid}; }
 	}
 
-	print "$hash_defect_priority{$defectid}, $defectid, $fixid, $hash_defect_fix{$defectid}{$fixid}, $count\n";
+	print "$hash_defect_priority{$defectid},$defectid,$fixid,$count,$hash_defect_fix{$defectid}{$fixid}\n";
     }
 }
 
